@@ -1,10 +1,6 @@
 (in-package :situated-program-challenge)
 
-;; cd resources
-;; cat migrations/*up.sql > psql-v1.sql
-;; psql -f psql-v1.sql -U meetup -d meetup -h localhost
-
-(defun connect ()
+(defun connect-db ()
   (connect-toplevel :postgres :database-name "meetup" :username "meetup" :password "password123"))
 
 (defmacro deftable (table-name superclass-list &body column-type-pairs)
@@ -57,15 +53,23 @@
   (street2     :text)
   (group-id    :integer))
 
+(defparameter *table-list*
+  '(groups groups-members meetups meetups-members members venues))
+
 (defun create-all-table ()
-  (mapc (lambda (table)
-          (execute-sql (car (table-definition table))))
-        '(groups groups-members meetups meetups-members members venues)))
+  (dolist (table *table-list*)
+    (execute-sql (car (table-definition table)))))
 
 (defun clear-all-table ()
-  (mapc (lambda (table)
-          (mapcar #'delete-dao (select-dao table)))
-        '(groups groups-members meetups meetups-members members venues)))
+  (dolist (table *table-list*)
+    (mapcar #'delete-dao (select-dao table))))
+
+(defparameter *table_list*
+  '(groups groups_members meetups meetups_members members venues))
+
+(defun drop-all-table ()
+  (loop for table in *table_list* do
+    (execute-sql (sxql:drop-table table))))
 
 (defun efind-dao (class &rest fields-and-values)
   (aif (apply #'find-dao class fields-and-values)

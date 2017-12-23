@@ -23,8 +23,6 @@
   (with-protect-to-json
     (mapcar #'members-dao->plist (select-dao 'members))))
 
-;; (dex:get "http://localhost:5000/members")
-
 (defroute "/members" (params :method :post)
   (with-protect-to-json
     (let ((dao (make-instance 'members
@@ -34,19 +32,10 @@
       (insert-dao dao)
       (members-dao->plist dao))))
 
-;; (defparameter members-input-example
-;;   (jojo:to-json '(:|first-name| "Satoshi"
-;;                   :|last-name|  "Imai"
-;;                   :|email|      "satoshi.imai@gmail.com")))
-;; (dex:post "http://localhost:5000/members"
-;;           :content members-input-example :headers '(("content-type" . "application/json")))
-
 (defroute "/members/:member-id" (params :method :get)
   (with-protect-to-json
     (let ((dao (efind-dao 'members :id (parse-integer (asc :member-id params)))))
       (members-dao->plist dao))))
-
-;; (dex:get "http://localhost:5000/members/1")
 
 (defroute "/members/:member-id/meetups/:event-id" (params :method :post)
   (let ((member-id (parse-integer (asc :member-id params)))
@@ -58,8 +47,6 @@
                (make-instance 'meetups-members :member-ref member :meetup-ref meetup)))
         (insert-dao meetups-members-dao)
         (meetups-dao->plist meetup)))))
-
-;; (dex:post "http://localhost:5000/members/3/meetups/2")
 
 (defroute "/members/:member-id/groups/:group-id" (params :method :post)
   (let ((admin (asc "admin" params))
@@ -73,14 +60,6 @@
                               :admin admin :member-ref member-dao :group-ref group-dao)))
         (insert-dao groups-members-dao)
         (groups-dao->plist* group-dao)))))
-
-;; (defparameter members-join-example
-;; "{
-;;   \"admin\": false
-;; }")
-
-;; (dex:post "http://localhost:5000/members/3/groups/1"
-;;           :content members-join-example :headers '(("content-type" . "application/json")))
 
 ;;; Groups ;;;
 
@@ -106,8 +85,6 @@
   (with-protect-to-json
     (mapcar #'groups-dao->plist* (select-dao 'groups))))
 
-;; (dex:get "http://localhost:5000/groups")
-
 (defun groups-dao->plist (groups-dao admin-members-dao-list)
   (list :|group-id|   (object-id groups-dao)
         :|group-name| (groups-name groups-dao)
@@ -131,12 +108,6 @@
           (insert-dao dao))
         (groups-dao->plist group-dao members)))))
 
-;; (defparameter groups-input-example
-;;   "{ \"group-name\": \"fugagroup\", \"admin-member-ids\": [ 1, 2 ] }")
-
-;; (dex:post "http://localhost:5000/groups"
-;;           :content groups-input-example :headers '(("content-type" . "application/json")))
-
 ;;; Venues ;;;
 
 (defun venues-dao->plist (dao)
@@ -154,8 +125,6 @@
             (select-dao 'venues
               (where (:= :group-id (parse-integer (asc :group-id params))))))))
 
-;; (dex:get "http://localhost:5000/groups/1/venues")
-
 (defroute "/groups/:group-id/venues" (params :method :post)
   (let ((dao (make-instance 'venues
                             :name        (asc "venue-name" params)
@@ -168,12 +137,6 @@
     (with-protect-to-json
       (insert-dao dao)
       (venues-dao->plist dao))))
-
-;; (defparameter venues-input-example
-;;   "{ \"venue-name\": \"venue2\", \"address\": { \"postal-code\": \"string\", \"prefecture\": \"string\", \"city\": \"string\", \"address1\": \"string\", \"address2\": \"string\" } }")
-
-;; (dex:post "http://localhost:5000/groups/1/venues"
-;;           :content venues-input-example :headers '(("content-type" . "application/json")))
 
 ;;; Meetups ;;;
 
@@ -197,8 +160,6 @@
             (select-dao 'meetups
               (where (:= :group-id (parse-integer (asc :group-id params))))))))
 
-;; (dex:get "http://localhost:5000/groups/1/meetups")
-
 (defroute "/groups/:group-id/meetups" (params :method :post)
   (let ((dao (make-instance 'meetups
                             :group-id (parse-integer (asc :group-id params))
@@ -211,20 +172,7 @@
       (insert-dao dao)
       (meetups-dao->plist dao))))
 
-;; (defparameter meetups-example
-;;   "{
-;;   \"title\": \"string\",
-;;   \"start-at\": \"2017-12-22T11:27:58.515Z\",
-;;   \"end-at\": \"2017-12-22T11:27:58.515Z\",
-;;   \"venue-id\": 1
-;; }")
-
-;; (dex:post "http://localhost:5000/groups/1/meetups"
-;;           :content meetups-example :headers '(("content-type" . "application/json")))
-
 (defroute "/groups/:group-id/meetups/:event-id" (params :method :get)
   (with-protect-to-json
     (meetups-dao->plist
      (efind-dao 'meetups :id (parse-integer (asc :event-id params))))))
-
-;; (dex:get "http://localhost:5000/groups/1/meetups/2")
