@@ -27,10 +27,15 @@
 (deftable groups ()
   (name :text))
 
+(deftable members ()
+  (first-name :text)
+  (last-name  :text)
+  (email      :text))
+
 (deftable groups-members ()
-  (group-id  :integer)
-  (member-id :integer)
-  (admin     :boolean))
+  (group-ref  groups)
+  (member-ref members)
+  (admin  :boolean))
 
 (deftable meetups ()
   (title    :text)
@@ -40,13 +45,8 @@
   (group-id :integer))
 
 (deftable meetups-members ()
-  (meetup-id :integer)
-  (member-id :integer))
-
-(deftable members ()
-  (first-name :text)
-  (last-name  :text)
-  (email      :text))
+  (meetup-ref meetups)
+  (member-ref members))
 
 (deftable venues ()
   (name        :text)
@@ -66,3 +66,8 @@
   (mapc (lambda (table)
           (mapcar #'delete-dao (select-dao table)))
         '(groups groups-members meetups meetups-members members venues)))
+
+(defun efind-dao (class &rest fields-and-values)
+  (aif (apply #'find-dao class fields-and-values)
+       it
+       (error "Not exist ~A" class)))

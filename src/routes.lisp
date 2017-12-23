@@ -3,16 +3,13 @@
 (defun asc (key alist)
   (cdr (assoc key alist :test #'string=)))
 
-(defmacro with-try-to-json ((result-var &body body-form) &body no-error-body)
+(defmacro with-protect-to-json (&body body)
   `(handler-case
-       (progn ,@body-form)
+       `(200 (:content-type "application/json")
+             (,(jojo:to-json (progn ,@body))))
      (error (e)
        `(500 (:content-type "application/json")
-             (,(jojo:to-json (list :|error| (format nil "~A" e))))))
-     (:no-error (,result-var)
-       (declare (ignorable ,result-var))
-       `(200 (:content-type "application/json")
-             (,(jojo:to-json (progn ,@no-error-body)))))))
+             (,(jojo:to-json (list :|error| (format nil "~A" e))))))))
 
 ;;; Members ;;;
 
@@ -23,19 +20,19 @@
         :|email|      (members-email dao)))
 
 (defroute "/members" (params :method :get)
-  (with-try-to-json (dao-list (select-dao 'members))
-    (mapcar #'members-dao->plist dao-list)))
+  (with-protect-to-json
+    (mapcar #'members-dao->plist (select-dao 'members))))
 
 ;; (dex:get "http://localhost:5000/members")
 
 (defroute "/members" (params :method :post)
-  (with-try-to-json
-      (dao (insert-dao
-            (make-instance 'members
-                           :first-name (asc "first-name" params)
-                           :last-name  (asc "last-name" params)
-                           :email      (asc "email" params))))
-    (members-dao->plist dao)))
+  (with-protect-to-json
+    (let ((dao (make-instance 'members
+                              :first-name (asc "first-name" params)
+                              :last-name  (asc "last-name" params)
+                              :email      (asc "email" params))))
+      (insert-dao dao)
+      (members-dao->plist dao))))
 
 ;; (defparameter members-input-example
 ;;   (jojo:to-json '(:|first-name| "Satoshi"
@@ -45,51 +42,59 @@
 ;;           :content members-input-example :headers '(("content-type" . "application/json")))
 
 (defroute "/members/:member-id" (params :method :get)
-  (with-try-to-json
-      (dao (aif (find-dao 'members :id (parse-integer (asc :member-id params)))
-                it
-                (error "Not exist member")))
-    (members-dao->plist dao)))
+  (with-protect-to-json
+    (let ((dao (efind-dao 'members :id (parse-integer (asc :member-id params)))))
+      (members-dao->plist dao))))
 
 ;; (dex:get "http://localhost:5000/members/1")
 
+(defroute "/members/:member-id/meetups/:event-id" (params :method :post)
+  (let ((member-id (parse-integer (asc :member-id params)))
+        (meetup-id (parse-integer (asc :event-id params))))
+    (with-protect-to-json
+      (let* ((member (efind-dao 'members :id member-id))
+             (meetup (efind-dao 'meetups :id meetup-id))
+             (meetups-members-dao
+               (make-instance 'meetups-members :member-ref member :meetup-ref meetup)))
+        (insert-dao meetups-members-dao)
+        (meetups-dao->plist meetup)))))
+
+;; (dex:post "http://localhost:5000/members/3/meetups/2")
+
 (defroute "/members/:member-id/groups/:group-id" (params :method :post)
-  (let* ((admin (asc "admin" params))
-         (member-id (parse-integer (asc :member-id params)))
-         (group-id  (parse-integer (asc :group-id  params)))
-         (groups-members-dao (make-instance 'groups-members
-                                            :admin admin :member-id member-id :group-id group-id)))
-    (with-try-to-json
-        (group-dao
-          (cond ((null (find-dao 'members :id member-id))
-                 (error "Not exist member"))
-                ((null (find-dao 'groups  :id group-id))
-                 (error "Not exist group"))
-                (t (insert-dao groups-members-dao)))
-          (find-dao 'groups :id group-id))
-      (groups-dao->plist* group-dao))))
+  (let ((admin (asc "admin" params))
+        (member-id (parse-integer (asc :member-id params)))
+        (group-id  (parse-integer (asc :group-id  params))))
+    (with-protect-to-json
+      (let* ((member-dao (efind-dao 'members :id member-id))
+             (group-dao  (efind-dao 'groups  :id group-id))
+             (groups-members-dao
+               (make-instance 'groups-members
+                              :admin admin :member-ref member-dao :group-ref group-dao)))
+        (insert-dao groups-members-dao)
+        (groups-dao->plist* group-dao)))))
 
 ;; (defparameter members-join-example
 ;; "{
-;;   \"admin\": true
+;;   \"admin\": false
 ;; }")
 
-;; (dex:post "http://localhost:5000/members/5/groups/19"
+;; (dex:post "http://localhost:5000/members/3/groups/1"
 ;;           :content members-join-example :headers '(("content-type" . "application/json")))
 
 ;;; Groups ;;;
 
 (defun groups-dao->plist* (groups-dao)
   (let* ((group-id (object-id groups-dao))
-         (groups-members-list (select-dao 'groups-members (where (:= :group-id group-id))))
-         (groups-members-ids (mapcar #'groups-members-member-id groups-members-list))
-         (admin-members-ids (mapcar #'groups-members-member-id
-                                    (remove-if-not #'groups-members-admin groups-members-list)))
-         (members-list (select-dao 'members (where (:in :id groups-members-ids))))
-         (admin-members-list (select-dao 'members (where (:in :id admin-members-ids))))
+         (groups-members-list
+           (select-dao 'groups-members (includes 'groups 'members)
+             (where (:= :group-ref-id group-id))))
+         (members-list (mapcar #'groups-members-member-ref groups-members-list))
+         (admin-members-list
+           (mapcar #'groups-members-member-ref
+                   (remove-if-not #'groups-members-admin groups-members-list)))
          (venues-list  (select-dao 'venues  (where (:= :group-id group-id))))
          (meetups-list (select-dao 'meetups (where (:= :group-id group-id)))))
-
     (list :|group-id|   group-id
           :|group-name| (groups-name groups-dao)
           :|admin|      (mapcar #'members-dao->plist admin-members-list)
@@ -98,9 +103,8 @@
           :|members|    (mapcar #'members-dao->plist members-list))))
 
 (defroute "/groups" (params :method :get)
-  (with-try-to-json
-      (groups-dao-list (select-dao 'groups))
-    (mapcar #'groups-dao->plist* groups-dao-list)))
+  (with-protect-to-json
+    (mapcar #'groups-dao->plist* (select-dao 'groups))))
 
 ;; (dex:get "http://localhost:5000/groups")
 
@@ -111,24 +115,24 @@
 
 (defroute "/groups" (params :method :post)
   (let* ((admin-member-ids (asc "admin-member-ids" params))
-         (groups-dao (make-instance 'groups :name (asc "group-name" params)))
-         (groups-members-dao-list
-           (mapcar (lambda (id) (make-instance 'groups-members :admin t :member-id id))
-                   admin-member-ids)))
-    (with-try-to-json
-        (member-dao-list
-          (let ((members (select-dao 'members (where (:in :id admin-member-ids)))))
-            (when (set-difference admin-member-ids (mapcar #'object-id members))
-              (error "Not exist member"))
-            (insert-dao groups-dao)
-            (dolist (groups-members-dao groups-members-dao-list)
-              (setf (groups-members-group-id groups-members-dao) (object-id groups-dao))
-              (insert-dao groups-members-dao))
-            members))
-      (groups-dao->plist groups-dao member-dao-list))))
+         (group-name (asc "group-name" params))
+         (group-dao (make-instance 'groups :name group-name)))
+    (with-protect-to-json
+      (let* ((members (if admin-member-ids (select-dao 'members (where (:in :id admin-member-ids)))))
+             (groups-members-dao-list
+               (mapcar (lambda (member-ref)
+                         (make-instance 'groups-members :admin t :member-ref member-ref))
+                       members)))
+        (when (set-difference admin-member-ids (mapcar #'object-id members))
+          (error "Not exist member"))
+        (insert-dao group-dao)
+        (dolist (dao groups-members-dao-list)
+          (setf (groups-members-group-ref dao) group-dao)
+          (insert-dao dao))
+        (groups-dao->plist group-dao members)))))
 
 ;; (defparameter groups-input-example
-;;   "{ \"group-name\": \"fugagroup\", \"admin-member-ids\": [ 30, 2 ] }")
+;;   "{ \"group-name\": \"fugagroup\", \"admin-member-ids\": [ 1, 2 ] }")
 
 ;; (dex:post "http://localhost:5000/groups"
 ;;           :content groups-input-example :headers '(("content-type" . "application/json")))
@@ -145,10 +149,10 @@
                          :|address2|    (venues-street2 dao))))
 
 (defroute "/groups/:group-id/venues" (params :method :get)
-  (with-try-to-json
-      (dao-list (select-dao 'venues
-                  (where (:= :group-id (parse-integer (asc :group-id params))))))
-    (mapcar #'venues-dao->plist dao-list)))
+  (with-protect-to-json
+    (mapcar #'venues-dao->plist
+            (select-dao 'venues
+              (where (:= :group-id (parse-integer (asc :group-id params))))))))
 
 ;; (dex:get "http://localhost:5000/groups/1/venues")
 
@@ -161,11 +165,12 @@
                             :street1     (asc "address1"    (asc "address" params))
                             :street2     (asc "address2"    (asc "address" params))
                             :group-id    (parse-integer (asc :group-id params)))))
-    (with-try-to-json (result-ignored (insert-dao dao))
+    (with-protect-to-json
+      (insert-dao dao)
       (venues-dao->plist dao))))
 
 ;; (defparameter venues-input-example
-;;   "{ \"venue-name\": \"string\", \"address\": { \"postal-code\": \"string\", \"prefecture\": \"string\", \"city\": \"string\", \"address1\": \"string\", \"address2\": \"string\" } }")
+;;   "{ \"venue-name\": \"venue2\", \"address\": { \"postal-code\": \"string\", \"prefecture\": \"string\", \"city\": \"string\", \"address1\": \"string\", \"address2\": \"string\" } }")
 
 ;; (dex:post "http://localhost:5000/groups/1/venues"
 ;;           :content venues-input-example :headers '(("content-type" . "application/json")))
@@ -175,12 +180,10 @@
 (defun meetups-dao->plist (meetups-dao)
   (let* ((venues-dao (find-dao 'venues :id (meetups-venue-id meetups-dao)))
          (meetups-members-dao-list
-           (select-dao 'meetups-members
-             (where (:= :meetup-id (object-id meetups-dao)))))
+           (select-dao 'meetups-members (includes 'members)
+             (where (:= :meetup-ref-id (object-id meetups-dao)))))
          (members-dao-list
-           (mapcar (lambda (meetups-members-dao)
-                     (find-dao 'members :id (meetups-members-member-id meetups-members-dao)))
-                   meetups-members-dao-list)))
+           (mapcar #'meetups-members-member-ref meetups-members-dao-list)))
     (list :|event-id| (object-id   meetups-dao)
           :|title|    (meetups-title    meetups-dao)
           :|start-at| (local-time:format-rfc3339-timestring nil (meetups-start-at meetups-dao))
@@ -189,10 +192,10 @@
           :|members|  (mapcar #'members-dao->plist members-dao-list))))
 
 (defroute "/groups/:group-id/meetups" (params :method :get)
-  (with-try-to-json (meetups-dao-list
-                      (select-dao 'meetups
-                        (where (:= :group-id (parse-integer (asc :group-id params))))))
-    (mapcar #'meetups-dao->plist meetups-dao-list)))
+  (with-protect-to-json
+    (mapcar #'meetups-dao->plist
+            (select-dao 'meetups
+              (where (:= :group-id (parse-integer (asc :group-id params))))))))
 
 ;; (dex:get "http://localhost:5000/groups/1/meetups")
 
@@ -203,10 +206,9 @@
                             :end-at (local-time:parse-rfc3339-timestring (asc "end-at" params))
                             :start-at (local-time:parse-rfc3339-timestring (asc "start-at" params))
                             :title (asc "title" params))))
-    (with-try-to-json (result-ignored
-                        (if (find-dao 'venues :id (meetups-venue-id dao))
-                            (insert-dao dao)
-                            (error "Not exist venue id")))
+    (with-protect-to-json
+      (efind-dao 'venues :id (meetups-venue-id dao))
+      (insert-dao dao)
       (meetups-dao->plist dao))))
 
 ;; (defparameter meetups-example
@@ -214,34 +216,15 @@
 ;;   \"title\": \"string\",
 ;;   \"start-at\": \"2017-12-22T11:27:58.515Z\",
 ;;   \"end-at\": \"2017-12-22T11:27:58.515Z\",
-;;   \"venue-id\": 50
+;;   \"venue-id\": 1
 ;; }")
 
 ;; (dex:post "http://localhost:5000/groups/1/meetups"
 ;;           :content meetups-example :headers '(("content-type" . "application/json")))
 
 (defroute "/groups/:group-id/meetups/:event-id" (params :method :get)
-  (with-try-to-json
-      (dao (aif (find-dao 'meetups :id (parse-integer (asc :event-id params)))
-                it
-                (error "Not exist meetup")))
-    (meetups-dao->plist dao)))
+  (with-protect-to-json
+    (meetups-dao->plist
+     (efind-dao 'meetups :id (parse-integer (asc :event-id params))))))
 
 ;; (dex:get "http://localhost:5000/groups/1/meetups/2")
-
-;;; Meetups-members ;;;
-
-(defroute "/members/:member-id/meetups/:event-id" (params :method :post)
-  (let ((dao (make-instance 'meetups-members
-                            :meetup-id (parse-integer (asc :event-id params))
-                            :member-id (parse-integer (asc :member-id params)))))
-    (with-try-to-json
-        (meetups-dao
-          (let ((member (find-dao 'meetups :id (meetups-members-member-id dao)))
-                (meetup (find-dao 'meetups :id (meetups-members-meetup-id dao))))
-            (cond ((null member) (error "Not exist member"))
-                  ((null meetup) (error "Not exist meetup"))
-                  (t (insert-dao dao) meetup))))
-      (meetups-dao->plist meetups-dao))))
-
-;; (dex:post "http://localhost:5000/members/3/meetups/2")
