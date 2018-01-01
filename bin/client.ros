@@ -1,0 +1,52 @@
+#!/bin/sh
+#|-*- mode:lisp -*-|#
+#|
+exec ros -Q -- $0 "$@"
+|#
+(progn ;;init forms
+  (ros:ensure-asdf)
+  #+quicklisp (ql:quickload '(:dexador :cl-json :cl-ppcre) :silent t)
+  )
+
+(defpackage :ros.script.client.3723612865
+  (:use :cl))
+(in-package :ros.script.client.3723612865)
+
+(defun argstr->assoc (str)
+  (let* ((pair (ppcre:split "=" str))
+         (key (car pair))
+         (val (cadr pair))
+         (val-list
+           (mapcar (lambda (str)
+                     (cond ((ppcre:scan "^[0-9]*$" str) (parse-integer str))
+                           ((string= str "true") t)
+                           ((string= str "false") nil)
+                           (t str)))
+                   (ppcre:split "," val))))
+    (if (= (length val-list) 1)
+        (cons key (car val-list))
+        (cons key val-list))))
+
+(defun main (&rest argv)
+  (assert (>= (length argv) 2))
+  (let* ((url (car argv))
+         (method (intern (string-upcase (cadr argv))))
+         (keyargs (mapcar #'argstr->assoc (cddr argv)))
+         (json (if keyargs (cl-json:encode-json-alist-to-string keyargs))))
+    (multiple-value-bind (res status)
+        (ecase method
+          (get (dex:get url))
+          (post (dex:post url :content json
+                              :headers '(("content-type" . "application/json")))))
+      (format *standard-output* "~A~%" res)
+      (format *error-output* "~A~%" status))))
+
+;; (main "http://localhost:5000/members" "get" "key1=a" "key2=b" "key3=")
+
+;; ./client http://localhost:5000/groups get
+;; ./client http://localhost:5000/groups post group-name=group4 admin-member-ids=
+;; ./client http://localhost:5000/members/1/groups/1 post admin=true
+;; ./client http://localhost:5000/groups/1/venues get
+;; ./client http://localhost:5000/members/1 get
+
+;;; vim: set ft=lisp lisp:
