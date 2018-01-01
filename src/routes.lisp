@@ -66,7 +66,7 @@
 (defun groups-dao->plist* (groups-dao)
   (let* ((group-id (object-id groups-dao))
          (groups-members-list
-           (select-dao 'groups-members (includes 'groups 'members)
+           (select-dao 'groups-members (includes 'members)
              (where (:= :group-ref-id group-id))))
          (members-list (mapcar #'groups-members-member-ref groups-members-list))
          (admin-members-list
