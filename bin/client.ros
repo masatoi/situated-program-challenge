@@ -44,7 +44,7 @@ exec ros -Q -- $0 "$@"
 ;; (main "http://localhost:5000/members" "get" "key1=a" "key2=b" "key3=")
 
 ;; ./client http://localhost:5000/groups get
-;; ./client http://localhost:5000/groups post group-name=group4 admin-member-ids=
+;; ./client http://localhost:5000/groups post group-name=group4 admin-member-ids=1,2,3
 ;; ./client http://localhost:5000/members/1/groups/1 post admin=true
 ;; ./client http://localhost:5000/groups/1/venues get
 ;; ./client http://localhost:5000/members/1 get

@@ -1,8 +1,5 @@
 (in-package :situated-program-challenge)
 
-(defun asc (key alist)
-  (cdr (assoc key alist :test #'string=)))
-
 (defmacro with-protect-to-json (&body body)
   `(handler-case
        `(200 (:content-type "application/json")
@@ -11,6 +8,36 @@
        `(500 (:content-type "application/json")
              (,(jojo:to-json (list :|error| (format nil "~A" e))))))))
 
+(defun ambiguous-eq (key1 key2)
+  (etypecase key2
+    (string  (string= (symbol-name key1) (string-upcase key2)))
+    (keyword (string= (symbol-name key1) (symbol-name key2)))
+    (symbol  (eq key1 key2))))
+
+(defmacro bind-alist (alist (&rest key-type-bindings) &body body)
+  (macrolet ((with-gensyms ((&rest names) &body body)
+               `(let ,(loop for n in names collect `(,n (gensym)))
+                  ,@body)))
+    (with-gensyms (alist-form)
+      `(let ((,alist-form ,alist))
+         (declare (ignorable ,alist-form))
+         (let ,(loop for l in key-type-bindings
+                     collect `(,(if (listp l) (car l) l)
+                               (cdr (assoc ',(if (listp l) (car l) l) ,alist-form
+                                           :test #'ambiguous-eq))))
+           (declare ,@(remove-if #'null
+                                 (mapcar (lambda (l)
+                                           (if (listp l)
+                                               (list 'type (cadr l) (car l))))
+                                         key-type-bindings)))
+           ,@body)))))
+
+(defmacro define-api (url method (&rest param-type-bindings) &body body)
+  (let ((params (gensym)))
+    `(defroute ,url (,params :method ,method)
+       (with-protect-to-json
+         (bind-alist ,params (,@param-type-bindings) ,@body)))))
+ 
 ;;; Members ;;;
 
 (defun members-dao->plist (dao)
@@ -19,47 +46,37 @@
         :|last-name|  (members-last-name dao)
         :|email|      (members-email dao)))
 
-(defroute "/members" (params :method :get)
-  (with-protect-to-json
-    (mapcar #'members-dao->plist (select-dao 'members))))
+(define-api "/members" :get ()
+  (mapcar #'members-dao->plist (select-dao 'members)))
 
-(defroute "/members" (params :method :post)
-  (with-protect-to-json
-    (let ((dao (make-instance 'members
-                              :first-name (asc "first-name" params)
-                              :last-name  (asc "last-name" params)
-                              :email      (asc "email" params))))
-      (insert-dao dao)
-      (members-dao->plist dao))))
+(define-api "/members" :post ((first-name string) (last-name string) (email string))
+  (let ((dao (make-instance 'members
+                            :first-name first-name
+                            :last-name  last-name
+                            :email      email)))
+    (insert-dao dao)
+    (members-dao->plist dao)))
 
-(defroute "/members/:member-id" (params :method :get)
-  (with-protect-to-json
-    (let ((dao (efind-dao 'members :id (parse-integer (asc :member-id params)))))
-      (members-dao->plist dao))))
+(define-api "/members/:member-id" :get (member-id)
+  (let ((dao (efind-dao 'members :id (parse-integer member-id))))
+    (members-dao->plist dao)))
 
-(defroute "/members/:member-id/meetups/:event-id" (params :method :post)
-  (let ((member-id (parse-integer (asc :member-id params)))
-        (meetup-id (parse-integer (asc :event-id params))))
-    (with-protect-to-json
-      (let* ((member (efind-dao 'members :id member-id))
-             (meetup (efind-dao 'meetups :id meetup-id))
-             (meetups-members-dao
-               (make-instance 'meetups-members :member-ref member :meetup-ref meetup)))
-        (insert-dao meetups-members-dao)
-        (meetups-dao->plist meetup)))))
+(define-api "/members/:member-id/meetups/:event-id" :post (member-id event-id)
+  (let* ((member (efind-dao 'members :id (parse-integer member-id)))
+         (meetup (efind-dao 'meetups :id (parse-integer event-id)))
+         (meetups-members-dao
+           (make-instance 'meetups-members :member-ref member :meetup-ref meetup)))
+    (insert-dao meetups-members-dao)
+    (meetups-dao->plist meetup)))
 
-(defroute "/members/:member-id/groups/:group-id" (params :method :post)
-  (let ((admin (asc "admin" params))
-        (member-id (parse-integer (asc :member-id params)))
-        (group-id  (parse-integer (asc :group-id  params))))
-    (with-protect-to-json
-      (let* ((member-dao (efind-dao 'members :id member-id))
-             (group-dao  (efind-dao 'groups  :id group-id))
-             (groups-members-dao
-               (make-instance 'groups-members
-                              :admin admin :member-ref member-dao :group-ref group-dao)))
-        (insert-dao groups-members-dao)
-        (groups-dao->plist* group-dao)))))
+(define-api "/members/:member-id/groups/:group-id" :post ((admin boolean) member-id group-id)
+  (let* ((member-dao (efind-dao 'members :id (parse-integer member-id)))
+         (group-dao  (efind-dao 'groups  :id (parse-integer group-id)))
+         (groups-members-dao
+           (make-instance 'groups-members
+                          :admin admin :member-ref member-dao :group-ref group-dao)))
+    (insert-dao groups-members-dao)
+    (groups-dao->plist* group-dao)))
 
 ;;; Groups ;;;
 
@@ -81,32 +98,28 @@
           :|meetups|    (mapcar #'meetups-dao->plist meetups-list)
           :|members|    (mapcar #'members-dao->plist members-list))))
 
-(defroute "/groups" (params :method :get)
-  (with-protect-to-json
-    (mapcar #'groups-dao->plist* (select-dao 'groups))))
+(define-api "/groups" :get ()
+  (mapcar #'groups-dao->plist* (select-dao 'groups)))
 
 (defun groups-dao->plist (groups-dao admin-members-dao-list)
   (list :|group-id|   (object-id groups-dao)
         :|group-name| (groups-name groups-dao)
         :|admin|      (mapcar #'members-dao->plist admin-members-dao-list)))
 
-(defroute "/groups" (params :method :post)
-  (let* ((admin-member-ids (asc "admin-member-ids" params))
-         (group-name (asc "group-name" params))
-         (group-dao (make-instance 'groups :name group-name)))
-    (with-protect-to-json
-      (let* ((members (if admin-member-ids (select-dao 'members (where (:in :id admin-member-ids)))))
-             (groups-members-dao-list
-               (mapcar (lambda (member-ref)
-                         (make-instance 'groups-members :admin t :member-ref member-ref))
-                       members)))
-        (when (set-difference admin-member-ids (mapcar #'object-id members))
-          (error "Not exist member"))
-        (insert-dao group-dao)
-        (dolist (dao groups-members-dao-list)
-          (setf (groups-members-group-ref dao) group-dao)
-          (insert-dao dao))
-        (groups-dao->plist group-dao members)))))
+(define-api "/groups" :post ((admin-member-ids list) (group-name string))
+  (let* ((group-dao (make-instance 'groups :name group-name))
+         (members (if admin-member-ids (select-dao 'members (where (:in :id admin-member-ids)))))
+         (groups-members-dao-list
+           (mapcar (lambda (member-ref)
+                     (make-instance 'groups-members :admin t :member-ref member-ref))
+                   members)))
+    (when (set-difference admin-member-ids (mapcar #'object-id members))
+      (error "Not exist member"))
+    (insert-dao group-dao)
+    (dolist (dao groups-members-dao-list)
+      (setf (groups-members-group-ref dao) group-dao)
+      (insert-dao dao))
+    (groups-dao->plist group-dao members)))
 
 ;;; Venues ;;;
 
@@ -119,22 +132,22 @@
                          :|address1|    (venues-street1 dao)
                          :|address2|    (venues-street2 dao))))
 
-(defroute "/groups/:group-id/venues" (params :method :get)
-  (with-protect-to-json
-    (mapcar #'venues-dao->plist
-            (select-dao 'venues
-              (where (:= :group-id (parse-integer (asc :group-id params))))))))
+(define-api "/groups/:group-id/venues" :get (group-id)
+  (mapcar #'venues-dao->plist
+          (select-dao 'venues
+            (where (:= :group-id (parse-integer group-id))))))
 
-(defroute "/groups/:group-id/venues" (params :method :post)
-  (let ((dao (make-instance 'venues
-                            :name        (asc "venue-name" params)
-                            :postal-code (asc "postal-code" (asc "address" params))
-                            :prefecture  (asc "prefecture"  (asc "address" params))
-                            :city        (asc "city"        (asc "address" params))
-                            :street1     (asc "address1"    (asc "address" params))
-                            :street2     (asc "address2"    (asc "address" params))
-                            :group-id    (parse-integer (asc :group-id params)))))
-    (with-protect-to-json
+(define-api "/groups/:group-id/venues" :post ((venue-name string) (address list) group-id)
+  (bind-alist address ((postal-code string) (prefecture string) (city string)
+                       (address1 string) (address2 string))
+    (let ((dao (make-instance 'venues
+                              :name        venue-name
+                              :postal-code postal-code
+                              :prefecture  prefecture
+                              :city        city
+                              :street1     address1
+                              :street2     address2
+                              :group-id    (parse-integer group-id))))
       (insert-dao dao)
       (venues-dao->plist dao))))
 
@@ -154,25 +167,23 @@
           :|venue|    (venues-dao->plist venues-dao)
           :|members|  (mapcar #'members-dao->plist members-dao-list))))
 
-(defroute "/groups/:group-id/meetups" (params :method :get)
-  (with-protect-to-json
-    (mapcar #'meetups-dao->plist
-            (select-dao 'meetups
-              (where (:= :group-id (parse-integer (asc :group-id params))))))))
+(define-api "/groups/:group-id/meetups" :get (group-id)
+  (mapcar #'meetups-dao->plist
+          (select-dao 'meetups
+            (where (:= :group-id (parse-integer group-id))))))
 
-(defroute "/groups/:group-id/meetups" (params :method :post)
+(define-api "/groups/:group-id/meetups" :post
+    (group-id (venue-id integer) (end-at string) (start-at string) (title string))
   (let ((dao (make-instance 'meetups
-                            :group-id (parse-integer (asc :group-id params))
-                            :venue-id (asc "venue-id" params)
-                            :end-at (local-time:parse-rfc3339-timestring (asc "end-at" params))
-                            :start-at (local-time:parse-rfc3339-timestring (asc "start-at" params))
-                            :title (asc "title" params))))
-    (with-protect-to-json
-      (efind-dao 'venues :id (meetups-venue-id dao))
-      (insert-dao dao)
-      (meetups-dao->plist dao))))
+                            :group-id (parse-integer group-id)
+                            :venue-id venue-id 
+                            :end-at   (local-time:parse-rfc3339-timestring end-at)
+                            :start-at (local-time:parse-rfc3339-timestring start-at)
+                            :title    title)))
+    (efind-dao 'venues :id (meetups-venue-id dao))
+    (insert-dao dao)
+    (meetups-dao->plist dao)))
 
-(defroute "/groups/:group-id/meetups/:event-id" (params :method :get)
-  (with-protect-to-json
-    (meetups-dao->plist
-     (efind-dao 'meetups :id (parse-integer (asc :event-id params))))))
+(define-api "/groups/:group-id/meetups/:event-id" :get (event-id)
+  (meetups-dao->plist
+   (efind-dao 'meetups :id (parse-integer event-id))))
