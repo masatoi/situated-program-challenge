@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>clj-nakano#3 note</title>
+<meta name="author" content="(Satoshi Imai)"/>
+<style type="text/css">
+.underline { text-decoration: underline; }
+</style>
+<link rel="stylesheet" href="http://cdn.jsdelivr.net/reveal.js/latest/css/reveal.css"/>
+
+<link rel="stylesheet" href="http://cdn.jsdelivr.net/reveal.js/latest/css/theme/black.css" id="theme"/>
+
+
+<!-- If the query includes 'print-pdf', include the PDF print sheet -->
+<script>
+    if( window.location.search.match( /print-pdf/gi ) ) {
+        var link = document.createElement( 'link' );
+        link.rel = 'stylesheet';
+        link.type = 'text/css';
+        link.href = 'http://cdn.jsdelivr.net/reveal.js/latest/css/print/pdf.css';
+        document.getElementsByTagName( 'head' )[0].appendChild( link );
+    }
+</script>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+<section id="sec-title-slide"><h1 class="title">clj-nakano#3 note</h1><h2 class="author">Satoshi Imai</h2><p class="date">Created: 2018-01-16 Tue 16:33</p>
+</section>
+
+<section>
+<section id="slide-orgd74682c">
+<h2 id="orgd74682c"><span class="section-number-2">1</span> 使用ライブラリ</h2>
+<p>
+<a href="situated-program-challenge.asd">situated-program-challenge.asd</a>
+</p>
+
+<ul>
+<li>処理系管理など: roswell</li>
+<li>HTTPサーバ: woo</li>
+<li>Webアプリケーションフレームワーク: clack + ningle</li>
+<li>ORマッパー: mito</li>
+<li>HTTPクライアント: dexador</li>
+<li>JSONライブラリ: jonathan</li>
+
+</ul>
+
+</section>
+</section>
+<section>
+<section id="slide-org275c801">
+<h2 id="org275c801"><span class="section-number-2">2</span> サーバの起動</h2>
+<p>
+<a href="src/server.lisp">src/server.lisp</a>
+</p>
+
+<div class="org-src-container">
+
+<pre  class="src src-lisp"><span style="color: #ff0000;">(</span><span style="color: #ff00ff; font-weight: bold;">defparameter</span> <span style="color: #ff4500;">*app*</span> <span style="color: #ff0000;">(</span>make-instance 'ningle:&lt;app&gt;<span style="color: #ff0000;">))</span>
+<span style="color: #ff0000;">(</span><span style="color: #ff00ff; font-weight: bold;">defparameter</span> <span style="color: #ff4500;">*handler*</span> nil<span style="color: #ff0000;">)</span>
+
+<span style="color: #ff0000;">(</span><span style="color: #ff00ff; font-weight: bold;">defun</span> <span style="color: #00ffff; font-weight: bold;">start</span> <span style="color: #ff0000;">(</span><span style="color: #00ff00;">&amp;key</span> <span style="color: #ff0000;">(</span>port 5000<span style="color: #ff0000;">))</span>
+  <span style="color: #ff0000;">(</span>setf *handler*
+        <span style="color: #ff0000;">(</span>clack:clackup *app*
+                       <span style="color: #b0c4de;">:server</span> <span style="color: #b0c4de;">:woo</span>
+                       <span style="color: #b0c4de;">:use-default-middlewares</span> nil
+                       <span style="color: #b0c4de;">:port</span> port<span style="color: #ff0000;">)))</span>
+<span style="color: #ff0000;">(</span>start<span style="color: #ff0000;">)</span> <span style="color: #00bfff;">; &#12469;&#12540;&#12496;&#36215;&#21205;</span>
+</pre>
+</div>
+
+</section>
+</section>
+<section>
+<section id="slide-org7776b2b">
+<h2 id="org7776b2b"><span class="section-number-2">3</span> APIの定義例 (URLパラメータ)</h2>
+<div class="org-src-container">
+
+<pre  class="src src-lisp"><span style="color: #ff0000;">(</span><span style="color: #ff00ff; font-weight: bold;">define-api</span> <span style="color: #ffa500; font-weight: bold;">"/divisor/:n/:m"</span> <span style="color: #b0c4de;">:get</span> <span style="color: #ff0000;">(</span>n m<span style="color: #ff0000;">)</span>
+  <span style="color: #ff0000;">(</span>/ <span style="color: #ff0000;">(</span>parse-integer n<span style="color: #ff0000;">)</span> <span style="color: #ff0000;">(</span>parse-integer m<span style="color: #ff0000;">)))</span>
+
+<span style="color: #ff0000;">(</span>dex:get <span style="color: #ffa500; font-weight: bold;">"http://localhost:5000/divisor/10/3"</span><span style="color: #ff0000;">)</span>
+<span style="color: #00bfff;">;; "3.3333333"</span>
+<span style="color: #00bfff;">;; 200</span>
+<span style="color: #ff0000;">(</span>dex:get <span style="color: #ffa500; font-weight: bold;">"http://localhost:5000/divisor/10/0"</span><span style="color: #ff0000;">)</span>
+</pre>
+</div>
+
+</section>
+</section>
+<section>
+<section id="slide-org5fcc6f6">
+<h2 id="org5fcc6f6"><span class="section-number-2">4</span> APIの定義例 (JSONパラメータ)</h2>
+<div class="org-src-container">
+
+<pre  class="src src-lisp"><span style="color: #ff0000;">(</span><span style="color: #ff00ff; font-weight: bold;">define-api</span> <span style="color: #ffa500; font-weight: bold;">"/divisor2"</span> <span style="color: #b0c4de;">:post</span> <span style="color: #ff0000;">((</span>n integer<span style="color: #ff0000;">)</span> <span style="color: #ff0000;">(</span>m integer<span style="color: #ff0000;">))</span>
+  <span style="color: #ff0000;">(</span>/ n m<span style="color: #ff0000;">))</span>
+
+<span style="color: #ff0000;">(</span>dex:post <span style="color: #ffa500; font-weight: bold;">"http://localhost:5000/divisor2"</span>
+          <span style="color: #b0c4de;">:content</span> <span style="color: #ff0000;">(</span>jojo:to-json '<span style="color: #ff0000;">(</span><span style="color: #b0c4de;">:n</span> 10 <span style="color: #b0c4de;">:m</span> 3<span style="color: #ff0000;">))</span> <span style="color: #00bfff;">; '(:n 10.0 :m 3.0)</span>
+          <span style="color: #b0c4de;">:headers</span> '<span style="color: #ff0000;">((</span><span style="color: #ffa500; font-weight: bold;">"content-type"</span> . <span style="color: #ffa500; font-weight: bold;">"application/json"</span><span style="color: #ff0000;">)))</span>
+</pre>
+</div>
+
+</section>
+</section>
+<section>
+<section id="slide-org410a70c">
+<h2 id="org410a70c"><span class="section-number-2">5</span> テーブル定義</h2>
+<p>
+<a href="src/db.lisp">src/db.lisp</a>
+</p>
+
+<div class="org-src-container">
+
+<pre  class="src src-lisp"><span style="color: #ff0000;">(</span>deftable groups <span style="color: #ff0000;">()</span>
+  <span style="color: #ff0000;">(</span>name <span style="color: #b0c4de;">:text</span><span style="color: #ff0000;">))</span>
+
+<span style="color: #ff0000;">(</span>deftable members <span style="color: #ff0000;">()</span>
+  <span style="color: #ff0000;">(</span>first-name <span style="color: #b0c4de;">:text</span><span style="color: #ff0000;">)</span>
+  <span style="color: #ff0000;">(</span>last-name  <span style="color: #b0c4de;">:text</span><span style="color: #ff0000;">)</span>
+  <span style="color: #ff0000;">(</span>email      <span style="color: #b0c4de;">:text</span><span style="color: #ff0000;">))</span>
+
+<span style="color: #ff0000;">(</span>deftable groups-members <span style="color: #ff0000;">()</span>
+  <span style="color: #ff0000;">(</span>group-ref  groups<span style="color: #ff0000;">)</span>
+  <span style="color: #ff0000;">(</span>member-ref members<span style="color: #ff0000;">)</span>
+  <span style="color: #ff0000;">(</span>admin  <span style="color: #b0c4de;">:boolean</span><span style="color: #ff0000;">))</span>
+
+<span style="color: #ff0000;">(</span>connect-db<span style="color: #ff0000;">)</span> <span style="color: #00bfff;">; DB&#12408;&#25509;&#32154;</span>
+</pre>
+</div>
+
+</section>
+</section>
+<section>
+<section id="slide-org18bbe0c">
+<h2 id="org18bbe0c"><span class="section-number-2">6</span> selectの例</h2>
+<div class="org-src-container">
+
+<pre  class="src src-lisp"><span style="color: #ff0000;">(</span>select-dao 'members<span style="color: #ff0000;">)</span>
+<span style="color: #ff0000;">(</span>select-dao 'members <span style="color: #ff0000;">(</span>where <span style="color: #ff0000;">(</span>= <span style="color: #b0c4de;">:last-name</span> <span style="color: #ffa500; font-weight: bold;">"Imai"</span><span style="color: #ff0000;">)))</span>
+<span style="color: #ff0000;">(</span>select-dao 'groups-members<span style="color: #ff0000;">)</span>
+<span style="color: #ff0000;">(</span>select-dao 'groups-members <span style="color: #ff0000;">(</span>includes 'groups 'members<span style="color: #ff0000;">))</span>
+</pre>
+</div>
+
+</section>
+</section>
+<section>
+<section id="slide-org8b505b8">
+<h2 id="org8b505b8"><span class="section-number-2">7</span> クライアント</h2>
+<p>
+Roswellスクリプト
+<a href="bin/client.ros">bin/client.ros</a>
+</p>
+
+<pre  class="example">
+ros build client.ros --disable-compression
+
+./client http://localhost:5000/groups get
+./client http://localhost:5000/groups post group-name=group4 admin-member-ids=1,2,3
+./client http://localhost:5000/members get
+./client http://localhost:5000/members/1/groups/1 post admin=true
+./client http://localhost:5000/members/100/groups/1 post admin=true
+./client http://localhost:5000/groups/1/venues get
+./client http://localhost:5000/members/1 get
+</pre>
+</section>
+</section>
+</div>
+</div>
+<script src="http://cdn.jsdelivr.net/reveal.js/latest/lib/js/head.min.js"></script>
+<script src="http://cdn.jsdelivr.net/reveal.js/latest/js/reveal.js"></script>
+
+<script>
+// Full list of configuration options available here:
+// https://github.com/hakimel/reveal.js#configuration
+Reveal.initialize({
+
+controls: true,
+progress: true,
+history: false,
+center: true,
+slideNumber: 'c',
+rollingLinks: false,
+keyboard: true,
+overview: true,
+
+theme: Reveal.getQueryHash().theme, // available themes are in /css/theme
+transition: Reveal.getQueryHash().transition || 'none', // default/cube/page/concave/zoom/linear/fade/none
+transitionSpeed: 'default',
+multiplex: {
+    secret: '', // null if client
+    id: '', // id, obtained from socket.io server
+    url: '' // Location of socket.io server
+},
+
+// Optional libraries used to extend on reveal.js
+dependencies: [
+ { src: 'http://cdn.jsdelivr.net/reveal.js/latest/lib/js/classList.js', condition: function() { return !document.body.classList; } },
+ { src: 'http://cdn.jsdelivr.net/reveal.js/latest/plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+ { src: 'http://cdn.jsdelivr.net/reveal.js/latest/plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+ { src: 'http://cdn.jsdelivr.net/reveal.js/latest/plugin/zoom-js/zoom.js', async: true, condition: function() { return !!document.body.classList; } },
+ { src: 'http://cdn.jsdelivr.net/reveal.js/latest/plugin/notes/notes.js', async: true, condition: function() { return !!document.body.classList; } }]
+});
+</script>
+</body>
+</html>

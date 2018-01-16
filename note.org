@@ -1,0 +1,103 @@
+# -*- Coding: utf-8; Mode: Org; -*-
+#+STARTUP: indent
+#+REVEAL_ROOT: http://cdn.jsdelivr.net/reveal.js/latest/
+#+REVEAL_MATHJAX_URL: https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML
+#+REVEAL_THEME: black
+#+REVEAL_TRANS: none
+#+OPTIONS: reveal_mathjax:t
+#+OPTIONS: toc:0
+#+TITLE: clj-nakano#3 note
+#+AUTHOR: Satoshi Imai
+#+EMAIL: satoshi.imai@gmail.com
+
+* 使用ライブラリ
+file:situated-program-challenge.asd
+
+- 処理系管理など: roswell
+- HTTPサーバ: woo
+- Webアプリケーションフレームワーク: clack + ningle
+- ORマッパー: mito
+- HTTPクライアント: dexador
+- JSONライブラリ: jonathan
+
+* サーバの起動
+file:src/server.lisp
+
+#+BEGIN_SRC lisp
+(defparameter *app* (make-instance 'ningle:<app>))
+(defparameter *handler* nil)
+
+(defun start (&key (port 5000))
+  (setf *handler*
+	(clack:clackup *app*
+                       :server :woo
+                       :use-default-middlewares nil
+                       :port port)))
+(start) ; サーバ起動
+#+END_SRC
+
+* APIの定義例 (URLパラメータ)
+#+BEGIN_SRC lisp
+(define-api "/divisor/:n/:m" :get (n m)
+  (/ (parse-integer n) (parse-integer m)))
+
+(dex:get "http://localhost:5000/divisor/10/3")
+;; "3.3333333"
+;; 200
+(dex:get "http://localhost:5000/divisor/10/0")
+#+END_SRC
+
+* APIの定義例 (JSONパラメータ)
+#+BEGIN_SRC lisp
+(define-api "/divisor2" :post ((n integer) (m integer))
+  (/ n m))
+
+(dex:post "http://localhost:5000/divisor2"
+          :content (jojo:to-json '(:n 10 :m 3)) ; '(:n 10.0 :m 3.0)
+          :headers '(("content-type" . "application/json")))
+#+END_SRC
+
+* テーブル定義
+file:src/db.lisp
+
+#+BEGIN_SRC lisp
+(deftable groups ()
+  (name :text))
+
+(deftable members ()
+  (first-name :text)
+  (last-name  :text)
+  (email      :text))
+
+(deftable groups-members ()
+  (group-ref  groups)
+  (member-ref members)
+  (admin  :boolean))
+
+(connect-db) ; DBへ接続
+#+END_SRC
+
+* selectの例
+
+#+BEGIN_SRC lisp
+(select-dao 'members)
+(select-dao 'members (where (= :last-name "Imai")))
+(select-dao 'groups-members)
+(select-dao 'groups-members (includes 'groups 'members))
+#+END_SRC
+
+* クライアント
+Roswellスクリプト
+file:bin/client.ros
+
+#+BEGIN_SRC 
+ros build client.ros --disable-compression
+
+./client http://localhost:5000/groups get
+./client http://localhost:5000/groups post group-name=group4 admin-member-ids=1,2,3
+./client http://localhost:5000/members get
+./client http://localhost:5000/members/1/groups/1 post admin=true
+./client http://localhost:5000/members/100/groups/1 post admin=true
+./client http://localhost:5000/groups/1/venues get
+./client http://localhost:5000/members/1 get
+#+END_SRC
