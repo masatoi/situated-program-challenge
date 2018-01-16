@@ -34,14 +34,19 @@ exec ros -Q -- $0 "$@"
          (keyargs (mapcar #'argstr->assoc (cddr argv)))
          (json (if keyargs (cl-json:encode-json-alist-to-string keyargs))))
     (multiple-value-bind (res status)
-        (ecase method
-          (get (dex:get url))
-          (post (dex:post url :content json
-                              :headers '(("content-type" . "application/json")))))
+        (handler-case
+            (ecase method
+              (get (dex:get url))
+              (post (dex:post url :content json
+                                  :headers '(("content-type" . "application/json")))))
+          (dexador.error:http-request-internal-server-error (e)
+            (values (format nil "~A" e) 500)))
       (format *standard-output* "~A~%" res)
       (format *error-output* "~A~%" status))))
 
 ;; (main "http://localhost:5000/members" "get" "key1=a" "key2=b" "key3=")
+
+;; ros build client.ros --disable-compression
 
 ;; ./client http://localhost:5000/groups get
 ;; ./client http://localhost:5000/groups post group-name=group4 admin-member-ids=1,2,3

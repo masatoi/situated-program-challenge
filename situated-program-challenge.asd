@@ -7,8 +7,6 @@
   :author ""
   :license ""
   :depends-on (:clack :ningle :mito :cl-markup :jonathan :dexador :anaphora :woo)
-
-  
   :components ((:module "src"
                 :components
                 ((:file "package")
