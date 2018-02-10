@@ -11,8 +11,8 @@
                        (col-type (if (listp col) (cadr col)))
                        (col-primary (if (find :primary-key col) t nil)))
 		  (list col-symbol
-			:accessor (intern (concatenate 'string (symbol-name table-name) "-" col-name))
-			:initarg (intern col-name :keyword)
+                        :accessor (intern (concatenate 'string (symbol-name table-name) "-" col-name))
+                        :initarg (intern col-name :keyword)
                         :col-type col-type
                         :primary-key col-primary)))
        column-type-pairs)
@@ -40,6 +40,14 @@
   (venue-id :integer)
   (group-id :integer))
 
+;; (deftable meetups ()
+;;   (title    :text)
+;;   (start-at :timestamp)
+;;   (end-at   :timestamp)
+;;   (venue-id :integer)
+;;   (group-id :integer)
+;;   (online-venue-id :integer))
+
 (deftable meetups-members ()
   (meetup-ref meetups)
   (member-ref members))
@@ -52,6 +60,17 @@
   (street1     :text)
   (street2     :text)
   (group-id    :integer))
+
+;; (deftable venues ()
+;;   (name        :text)
+;;   (postal-code :text)
+;;   (prefecture  :text)
+;;   (city        :text)
+;;   (street1     :text)
+;;   (street2     :text)
+;;   (group-id    :integer)
+;;   (venue-type  :text)
+;;   (url         :text))
 
 (defparameter *table-list*
   '(groups groups-members meetups meetups-members members venues))

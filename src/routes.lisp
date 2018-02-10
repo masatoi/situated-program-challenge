@@ -142,19 +142,52 @@
                        (address1 string) (address2 string))
     (let ((dao (make-instance 'venues
                               :name        venue-name
+                              :venue-type  "physical"
                               :postal-code postal-code
                               :prefecture  prefecture
                               :city        city
                               :street1     address1
                               :street2     address2
+                              :url         ""
                               :group-id    (parse-integer group-id))))
       (insert-dao dao)
       (venues-dao->plist dao))))
+
+(defun online-venues-dao->plist (dao)
+  (list :|online-venue-id| (object-id dao)
+        :|venue-name|      (venues-name dao)
+        :|url|             (venues-url  dao)))
+
+(define-api "/groups/:group-id/online-venues" :get (group-id)
+  (mapcar #'online-venues-dao->plist
+          (select-dao 'venues
+            (where (:= :group-id (parse-integer group-id))))))
+
+;; (dex:get "http://localhost:5000/groups/1/online-venues")
+
+(define-api "/groups/:group-id/online-venues" :post ((venue-name string) (url string) group-id)
+  (let ((dao (make-instance 'venues
+                            :name        venue-name
+                            :venue-type  "online"
+                            :postal-code ""
+                            :prefecture  ""
+                            :city        ""
+                            :street1     ""
+                            :street2     ""
+                            :url         url
+                            :group-id    (parse-integer group-id))))
+    (insert-dao dao)
+    (online-venues-dao->plist dao)))
+
+;; (dex:post "http://localhost:5000/groups/1/online-venues"
+;;           :content (jojo:to-json '(:venue-name "hoge" :url "http://hogehoge.com/"))
+;;           :headers '(("content-type" . "application/json")))
 
 ;;; Meetups ;;;
 
 (defun meetups-dao->plist (meetups-dao)
   (let* ((venues-dao (find-dao 'venues :id (meetups-venue-id meetups-dao)))
+         (online-venue-dao (find-dao 'venues :id (meetups-online-venue-id meetups-dao)))
          (meetups-members-dao-list
            (select-dao 'meetups-members (includes 'members)
              (where (:= :meetup-ref-id (object-id meetups-dao)))))
@@ -165,6 +198,7 @@
           :|start-at| (local-time:format-rfc3339-timestring nil (meetups-start-at meetups-dao))
           :|end-at|   (local-time:format-rfc3339-timestring nil (meetups-end-at meetups-dao))
           :|venue|    (venues-dao->plist venues-dao)
+          :|online-venue| (online-venues-dao->plist online-venue-dao)
           :|members|  (mapcar #'members-dao->plist members-dao-list))))
 
 (define-api "/groups/:group-id/meetups" :get (group-id)
@@ -172,11 +206,13 @@
           (select-dao 'meetups
             (where (:= :group-id (parse-integer group-id))))))
 
+
 (define-api "/groups/:group-id/meetups" :post
-    (group-id (venue-id integer) (end-at string) (start-at string) (title string))
+    (group-id (venue-id integer) (online-venue-id integer) (end-at string) (start-at string) (title string))
   (let ((dao (make-instance 'meetups
                             :group-id (parse-integer group-id)
-                            :venue-id venue-id 
+                            :venue-id venue-id
+                            :online-venue-id online-venue-id
                             :end-at   (local-time:parse-rfc3339-timestring end-at)
                             :start-at (local-time:parse-rfc3339-timestring start-at)
                             :title    title)))
