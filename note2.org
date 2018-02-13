@@ -1,0 +1,119 @@
+# -*- Coding: utf-8; Mode: Org; -*-
+#+STARTUP: indent
+#+REVEAL_ROOT: http://cdn.jsdelivr.net/reveal.js/latest/
+#+REVEAL_MATHJAX_URL: https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML
+#+REVEAL_THEME: black
+#+REVEAL_TRANS: none
+#+OPTIONS: reveal_mathjax:t
+#+OPTIONS: toc:0
+#+TITLE: clj-nakano#4 note
+#+AUTHOR: Satoshi Imai
+#+EMAIL: satoshi.imai@gmail.com
+
+* Ver2での変更点
+** テーブル定義 (file:src/db.lisp)
+
+オンライン会場のIDを追加
+
+#+BEGIN_SRC lisp
+(deftable meetups ()
+  (title    :text)
+  (start-at :timestamp)
+  (end-at   :timestamp)
+  (venue-id :integer)
+  (group-id :integer)
++ (online-venue-id :integer :initform 0))
+#+END_SRC
+
+venuesテーブルに会場の型とURLを追加
+Postgresqlのenum型を追加する方法が分からなかったので、text型にしておいてDAOからDBに登録するときにチェック関数をかませることに
+
+#+BEGIN_SRC lisp
+(defun check-venue-type (venue-type)
+  (assert (or (string= venue-type "physical")
+              (string= venue-type "online")))
+  venue-type)
+
+(deftable venues ()
+  (name        :text)
+  (postal-code :text)
+  (prefecture  :text)
+  (city        :text)
+  (street1     :text)
+  (street2     :text)
+  (group-id    :integer)
++ (venue-type  :text :initform "physical" :deflate #'check-venue-type)
++ (url         :text :initform ""))
+#+END_SRC
+
+** API定義 (file:src/routes.lisp)
+
+オンライン会場の取得と登録のAPIを新たに定義
+
+#+BEGIN_SRC lisp
+(defun online-venues-dao->plist (dao)
+  (list :|online-venue-id| (object-id dao)
+        :|venue-name|      (venues-name dao)
+        :|url|             (venues-url  dao)))
+
+(define-api "/groups/:group-id/online-venues" :get (group-id)
+  (mapcar #'online-venues-dao->plist
+          (select-dao 'venues
+            (where (:and (:= :group-id (parse-integer group-id))
+                         (:= :venue-type "online"))))))
+
+(define-api "/groups/:group-id/online-venues" :post ((venue-name string) (url string) group-id)
+  (let ((dao (make-instance 'venues
+                            :name        venue-name
+                            :venue-type  "online"
+                            :postal-code ""
+                            :prefecture  ""
+                            :city        ""
+                            :street1     ""
+                            :street2     ""
+                            :url         url
+                            :group-id    (parse-integer group-id))))
+    (insert-dao dao)
+    (online-venues-dao->plist dao)))
+#+END_SRC
+
+ミートアップの登録時にオンライン会場のIDを指定し、取得時にはオンライン会場のIDから紐付けられる情報を付加するように変更
+
+#+BEGIN_SRC lisp
+(defun meetups-dao->plist (meetups-dao)
+  (let* ((venues-dao (find-dao 'venues :id (meetups-venue-id meetups-dao)))
++        (online-venue-dao (find-dao 'venues :id (meetups-online-venue-id meetups-dao)))
+         (meetups-members-dao-list
+           (select-dao 'meetups-members (includes 'members)
+             (where (:= :meetup-ref-id (object-id meetups-dao)))))
+         (members-dao-list
+           (mapcar #'meetups-members-member-ref meetups-members-dao-list)))
+    (list :|event-id| (object-id   meetups-dao)
+          :|title|    (meetups-title    meetups-dao)
+          :|start-at| (local-time:format-rfc3339-timestring nil (meetups-start-at meetups-dao))
+          :|end-at|   (local-time:format-rfc3339-timestring nil (meetups-end-at meetups-dao))
+          :|venue|    (venues-dao->plist venues-dao)
++         :|online-venue| (if online-venue-dao (online-venues-dao->plist online-venue-dao))
+          :|members|  (mapcar #'members-dao->plist members-dao-list))))
+
+(define-api "/groups/:group-id/meetups" :get (group-id)
+  (mapcar #'meetups-dao->plist
+          (select-dao 'meetups
+            (where (:= :group-id (parse-integer group-id))))))
+
+(define-api "/groups/:group-id/meetups" :post
+    (group-id (venue-id integer) (online-venue-id integer) (end-at string) (start-at string) (title string))
+  (let ((dao (make-instance 'meetups
+                            :group-id (parse-integer group-id)
+                            :venue-id venue-id
++                           :online-venue-id online-venue-id
+                            :end-at   (local-time:parse-rfc3339-timestring end-at)
+                            :start-at (local-time:parse-rfc3339-timestring start-at)
+                            :title    title)))
+    (efind-dao 'venues :id (meetups-venue-id dao))
+    (insert-dao dao)
+    (meetups-dao->plist dao)))
+#+END_SRC
+
+** ハマったところ
+mito(ORマッパー)のクラスを再定義するとDBのマイグレーションコードが生成され、SQLを書かないでもテーブル構造を変えられるはずだったのだがうまくいかず、SQLを手打ちする羽目に・・・
