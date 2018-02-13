@@ -161,7 +161,8 @@
 (define-api "/groups/:group-id/online-venues" :get (group-id)
   (mapcar #'online-venues-dao->plist
           (select-dao 'venues
-            (where (:= :group-id (parse-integer group-id))))))
+            (where (:and (:= :group-id (parse-integer group-id))
+                         (:= :venue-type "online"))))))
 
 ;; (dex:get "http://localhost:5000/groups/1/online-venues")
 
@@ -180,7 +181,7 @@
     (online-venues-dao->plist dao)))
 
 ;; (dex:post "http://localhost:5000/groups/1/online-venues"
-;;           :content (jojo:to-json '(:venue-name "hoge" :url "http://hogehoge.com/"))
+;;           :content (jojo:to-json '(:venue-name "online-venue1" :url "http://venue1.com/"))
 ;;           :headers '(("content-type" . "application/json")))
 
 ;;; Meetups ;;;
@@ -198,7 +199,7 @@
           :|start-at| (local-time:format-rfc3339-timestring nil (meetups-start-at meetups-dao))
           :|end-at|   (local-time:format-rfc3339-timestring nil (meetups-end-at meetups-dao))
           :|venue|    (venues-dao->plist venues-dao)
-          :|online-venue| (online-venues-dao->plist online-venue-dao)
+          :|online-venue| (if online-venue-dao (online-venues-dao->plist online-venue-dao))
           :|members|  (mapcar #'members-dao->plist members-dao-list))))
 
 (define-api "/groups/:group-id/meetups" :get (group-id)
@@ -206,6 +207,7 @@
           (select-dao 'meetups
             (where (:= :group-id (parse-integer group-id))))))
 
+;; (dex:get "http://localhost:5000/groups/1/meetups")
 
 (define-api "/groups/:group-id/meetups" :post
     (group-id (venue-id integer) (online-venue-id integer) (end-at string) (start-at string) (title string))
@@ -220,6 +222,16 @@
     (insert-dao dao)
     (meetups-dao->plist dao)))
 
+;; (dex:post "http://localhost:5000/groups/1/meetups"
+;;           :content (jojo:to-json '(:title "physical-online-meetup1"
+;;                                    :start-at "2018-02-13T08:10:30.712Z"
+;;                                    :end-at "2018-02-13T08:10:30.712Z"
+;;                                    :venue-id 1
+;;                                    :online-venue-id 3))
+;;           :headers '(("content-type" . "application/json")))
+
 (define-api "/groups/:group-id/meetups/:event-id" :get (event-id)
   (meetups-dao->plist
    (efind-dao 'meetups :id (parse-integer event-id))))
+
+;; (dex:get "http://localhost:5000/groups/1/meetups/2")

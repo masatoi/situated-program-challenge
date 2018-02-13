@@ -6,15 +6,18 @@
 (defmacro deftable (table-name superclass-list &body column-type-pairs)
   `(defclass ,table-name (,@superclass-list)
      ,(mapcar (lambda (col)
-		(let* ((col-symbol (if (listp col) (car col) col))
+                (assert (>= (length col) 2))
+		(let* ((col-symbol (car col))
 		       (col-name (symbol-name col-symbol))
-                       (col-type (if (listp col) (cadr col)))
-                       (col-primary (if (find :primary-key col) t nil)))
-		  (list col-symbol
-                        :accessor (intern (concatenate 'string (symbol-name table-name) "-" col-name))
-                        :initarg (intern col-name :keyword)
-                        :col-type col-type
-                        :primary-key col-primary)))
+                       (col-type (cadr col))
+                       (rest-options (cddr col)))
+		  (append
+                   (list col-symbol
+                         :accessor (intern (concatenate 'string (symbol-name table-name)
+                                                        "-" col-name))
+                         :initarg (intern col-name :keyword)
+                         :col-type col-type)
+                   rest-options)))
        column-type-pairs)
      (:metaclass dao-table-class)))
 
@@ -38,19 +41,17 @@
   (start-at :timestamp)
   (end-at   :timestamp)
   (venue-id :integer)
-  (group-id :integer))
-
-;; (deftable meetups ()
-;;   (title    :text)
-;;   (start-at :timestamp)
-;;   (end-at   :timestamp)
-;;   (venue-id :integer)
-;;   (group-id :integer)
-;;   (online-venue-id :integer))
+  (group-id :integer)
+  (online-venue-id :integer :initform 0))
 
 (deftable meetups-members ()
   (meetup-ref meetups)
   (member-ref members))
+
+(defun check-venue-type (venue-type)
+  (assert (or (string= venue-type "physical")
+              (string= venue-type "online")))
+  venue-type)
 
 (deftable venues ()
   (name        :text)
@@ -59,18 +60,9 @@
   (city        :text)
   (street1     :text)
   (street2     :text)
-  (group-id    :integer))
-
-;; (deftable venues ()
-;;   (name        :text)
-;;   (postal-code :text)
-;;   (prefecture  :text)
-;;   (city        :text)
-;;   (street1     :text)
-;;   (street2     :text)
-;;   (group-id    :integer)
-;;   (venue-type  :text)
-;;   (url         :text))
+  (group-id    :integer)
+  (venue-type  :text :initform "physical" :deflate #'check-venue-type)
+  (url         :text :initform ""))
 
 (defparameter *table-list*
   '(groups groups-members meetups meetups-members members venues))

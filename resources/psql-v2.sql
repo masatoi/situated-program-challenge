@@ -1,0 +1,5 @@
+ALTER TABLE meetups ADD COLUMN online_venue_id integer NOT NULL DEFAULT 0;
+ALTER TABLE meetups ALTER COLUMN online_venue_id DROP DEFAULT;
+
+ALTER TABLE venues ADD COLUMN url text NOT NULL DEFAULT '', ADD COLUMN venue_type text NOT NULL DEFAULT 'physical';
+ALTER TABLE venues ALTER COLUMN url DROP DEFAULT, ALTER COLUMN venue_type DROP DEFAULT;
